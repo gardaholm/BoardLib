@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>D3 Scatterplot</title>
+    <title>D3 Scatterplot with Zoom and Pan</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -18,7 +18,7 @@
     </style>
 </head>
 <body>
-    <h1>D3 Scatterplot Example 2</h1>
+    <h1>D3 Scatterplot Example with Zoom and Pan</h1>
     <div>
         <label for="view">View: </label>
         <select id="view">
@@ -43,8 +43,9 @@
 
         const svg = d3.select("#scatterplot")
             .attr("viewBox", `0 0 800 500`)
-            .attr("preserveAspectRatio", "xMidYMid meet")
-            .append("g")
+            .attr("preserveAspectRatio", "xMidYMid meet");
+
+        const g = svg.append("g")
             .attr("transform", `translate(${margin.left},${margin.top})`);
 
         const x = d3.scaleTime().range([0, scatterplotWidth]);
@@ -61,7 +62,8 @@
             return data.map(d => ({
                 date: new Date(d.date),
                 grade: +d.difficulty,
-                key: `${d.climb_name}-${d.date}`
+                key: `${d.climb_name}-${d.date}`,
+                is_ascent: d.is_ascent,
             }));
         };
 
@@ -85,7 +87,8 @@
         };
 
         const calculateTrendData = (data, transformDate) => {
-            const groupedData = d3.group(data, d => +transformDate(d.date));
+            const filteredData = data.filter(d => d.is_ascent); // Use only ascents for trend calculation
+            const groupedData = d3.group(filteredData, d => +transformDate(d.date));
 
             const avgTrendData = Array.from(groupedData, ([date, routes]) => {
                 const avgGrade = d3.median(routes, d => d.grade);
@@ -112,7 +115,8 @@
                 .attr("r", 2)
                 .attr("fill", "steelblue")
                 .attr("cx", d => d.fx)
-                .attr("cy", d => d.fy);
+                .attr("cy", d => d.fy)
+                .attr("data-is-ascent", d => d.is_ascent); // Added line;
 
             dotGroups.exit().remove();
 
@@ -121,7 +125,7 @@
                 .duration(1000)
                 .attr("cx", d => d.fx)
                 .attr("cy", d => d.fy)
-                .attr("fill", "steelblue");
+                .attr("fill", d => d.is_ascent ? "red" : "gray");
         };
 
         const drawTrendlines = (svg, avgTrendData, maxTrendData, x, y) => {
@@ -227,7 +231,7 @@
             x.domain(xDomain);
             y.domain([yAxisStart, d3.max(data, d => d.grade)]);
 
-            svg.append("g")
+            g.append("g")
                 .attr("class", "x axis")
                 .attr("transform", `translate(0,${scatterplotHeight})`)
                 .call(d3.axisBottom(x))
@@ -237,20 +241,46 @@
                 .attr("dy", "0.15em")
                 .attr("transform", "rotate(-45)");
 
-            svg.append("g")
+            g.append("g")
                 .attr("class", "y axis")
                 .call(d3.axisLeft(y));
 
-            drawCircles(svg, data, y);
+            drawCircles(g, data, y);
         };
+
+        const zoomed = (event) => {
+            const transform = event.transform;
+            const newX = transform.rescaleX(x);
+            const newY = transform.rescaleY(y);
+
+            g.select(".x.axis").call(d3.axisBottom(newX).tickFormat(formatDate['daily']).ticks(d3.timeDay.every(1))); // needs correct updating
+
+
+            g.selectAll(".dot")
+                .attr("cx", d => transform.applyX(d.fx))
+
+
+            g.selectAll(".trendline")
+                .attr("d", d3.line()
+                    .x(d => transform.applyX(x(d.date)))
+                    .y(d => transform.applyY(y(d.avgGrade))) // needs solution for both trendlines
+                    .curve(d3.curveBasis));
+        };
+
+        const zoom = d3.zoom()
+            .scaleExtent([1, 10])
+            .translateExtent([[-100, -100], [scatterplotWidth + 100, scatterplotHeight + 100]])
+            .on("zoom", zoomed);
+
+        svg.call(zoom);
 
         document.getElementById("view").addEventListener("change", function () {
             const view = this.value;
-            updateData(view, svg, routeData, y, 0);
+            updateData(view, g, routeData, y, 0);
         });
 
-        initialSetup(svg, routeData, y, 0);
-        updateData('daily', svg, routeData, y, 0);
+        initialSetup(g, routeData, y, 0);
+        updateData('daily', g, routeData, y, 0);
     </script>
 </body>
 </html>
