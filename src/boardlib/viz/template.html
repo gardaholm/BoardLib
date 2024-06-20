@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D3 Scatterplot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        svg {
+            background-color: #f0f0f0;
+            margin: 20px;
+        }
+        .axis text {
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>D3 Scatterplot Example 2</h1>
+    <div>
+        <label for="view">View: </label>
+        <select id="view">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+        </select>
+    </div>
+    <svg id="scatterplot" width="800" height="500"></svg>
+
+    <!-- Embed D3.js Library -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <!-- Embed your data -->
+    <script id="data-script">
+        const data = __DATA__;
+
+        const margin = { top: 20, right: 20, bottom: 50, left: 50 };
+        const scatterplotWidth = 800 - margin.left - margin.right;
+        const scatterplotHeight = 500 - margin.top - margin.bottom;
+
+        const svg = d3.select("#scatterplot")
+            .attr("viewBox", `0 0 800 500`)
+            .attr("preserveAspectRatio", "xMidYMid meet")
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const x = d3.scaleTime().range([0, scatterplotWidth]);
+        const y = d3.scaleLinear().range([scatterplotHeight, 0]);
+
+        const formatDate = {
+            daily: d3.timeFormat("%Y-%m-%d"),
+            weekly: d3.timeFormat("%Y-%W"),
+            monthly: d3.timeFormat("%Y-%m"),
+            yearly: d3.timeFormat("%Y")
+        };
+
+        const processRoutes = (data) => {
+            return data.map(d => ({
+                date: new Date(d.date),
+                grade: +d.difficulty,
+                key: `${d.climb_name}-${d.date}`
+            }));
+        };
+
+        const routeData = processRoutes(data);
+
+        const applyForceSimulation = (data, y) => {
+            const simulation = d3.forceSimulation(data)
+                .force("x", d3.forceX(d => x(d.date)).strength(0.1))
+                .force("y", d3.forceY(d => y(d.grade)).strength(1))
+                .force("collision", d3.forceCollide(1))
+                .stop();
+
+            for (let i = 0; i < 120; i++) {
+                simulation.tick();
+            }
+
+            data.forEach(d => {
+                d.fx = d.x;
+                d.fy = d.y;
+            });
+        };
+
+        const calculateTrendData = (data, transformDate) => {
+            const groupedData = d3.group(data, d => +transformDate(d.date));
+
+            const avgTrendData = Array.from(groupedData, ([date, routes]) => {
+                const avgGrade = d3.median(routes, d => d.grade);
+                return { date: new Date(date), avgGrade: avgGrade };
+            }).filter(d => !isNaN(d.avgGrade));
+
+            const maxTrendData = Array.from(groupedData, ([date, routes]) => {
+                const maxGrade = d3.max(routes, d => d.grade);
+                return { date: new Date(date), maxGrade: maxGrade };
+            }).filter(d => !isNaN(d.maxGrade));
+
+            return { avgTrendData, maxTrendData };
+        };
+
+        const drawCircles = (svg, data, y) => {
+            const dotGroups = svg.selectAll(".dot-group")
+                .data(data, d => d.key);
+
+            const dotsEnter = dotGroups.enter().append("g")
+                .attr("class", "dot-group");
+
+            dotsEnter.append("circle")
+                .attr("class", "dot")
+                .attr("r", 2)
+                .attr("fill", "steelblue")
+                .attr("cx", d => d.fx)
+                .attr("cy", d => d.fy);
+
+            dotGroups.exit().remove();
+
+            dotGroups.select("circle")
+                .transition()
+                .duration(1000)
+                .attr("cx", d => d.fx)
+                .attr("cy", d => d.fy)
+                .attr("fill", "steelblue");
+        };
+
+        const drawTrendlines = (svg, avgTrendData, maxTrendData, x, y) => {
+            const avgTrendline = d3.line()
+                .x(d => x(d.date))
+                .y(d => y(d.avgGrade))
+                .curve(d3.curveBasis);
+
+            const maxTrendline = d3.line()
+                .x(d => x(d.date))
+                .y(d => y(d.maxGrade))
+                .curve(d3.curveBasis);
+
+            svg.selectAll(".avg-trendline").remove();
+            svg.selectAll(".max-trendline").remove();
+
+            svg.append("path")
+                .datum(avgTrendData)
+                .attr("class", "trendline avg-trendline")
+                .attr("d", avgTrendline)
+                .attr("stroke", "blue")
+                .attr("fill", "none");
+
+            svg.append("path")
+                .datum(maxTrendData)
+                .attr("class", "trendline max-trendline")
+                .attr("d", maxTrendline)
+                .attr("stroke", "red")
+                .attr("fill", "none");
+        };
+
+        const updateData = (view, svg, data, y, yAxisStart) => {
+            const transformDate = {
+                daily: d3.timeDay,
+                weekly: d3.timeWeek,
+                monthly: d3.timeMonth,
+                yearly: d3.timeYear
+            }[view];
+
+            const transformedData = data.map(d => ({
+                ...d,
+                date: transformDate(d.date)
+            }));
+
+            let xDomain = d3.extent(transformedData, d => d.date);
+            const padding = (xDomain[1] - xDomain[0]) * 0.05;
+            xDomain[0] = new Date(xDomain[0].getTime() - padding);
+            xDomain[1] = new Date(xDomain[1].getTime() + padding);
+
+            x.domain(xDomain);
+            y.domain([yAxisStart, d3.max(transformedData, d => d.grade)]);
+
+            const xAxis = d3.axisBottom(x)
+                .tickFormat(formatDate[view])
+                .ticks(transformDate.every(1));
+
+            const yAxis = d3.axisLeft(y);
+
+            applyForceSimulation(transformedData, y);
+
+            const { avgTrendData, maxTrendData } = calculateTrendData(transformedData, transformDate);
+
+            drawTrendlines(svg, avgTrendData, maxTrendData, x, y);
+
+            drawCircles(svg, transformedData, y);
+
+            const xAxisGroup = svg.select(".x.axis");
+            if (xAxisGroup.empty()) {
+                svg.append("g")
+                    .attr("class", "x axis")
+                    .attr("transform", `translate(0,${scatterplotHeight})`)
+                    .call(xAxis)
+                    .selectAll("text")
+                    .style("text-anchor", "end")
+                    .attr("dx", "-0.8em")
+                    .attr("dy", "0.15em")
+                    .attr("transform", "rotate(-45)");
+            } else {
+                xAxisGroup.call(xAxis)
+                    .selectAll("text")
+                    .style("text-anchor", "end")
+                    .attr("dx", "-0.8em")
+                    .attr("dy", "0.15em")
+                    .attr("transform", "rotate(-45)");
+            }
+
+            const yAxisGroup = svg.select(".y.axis");
+            if (yAxisGroup.empty()) {
+                svg.append("g")
+                    .attr("class", "y axis")
+                    .call(yAxis);
+            } else {
+                yAxisGroup.call(yAxis);
+            }
+        };
+
+        const initialSetup = (svg, data, y, yAxisStart) => {
+            let xDomain = d3.extent(data, d => d.date);
+            const padding = (xDomain[1] - xDomain[0]) * 0.05;
+            xDomain[0] = new Date(xDomain[0].getTime() - padding);
+            xDomain[1] = new Date(xDomain[1].getTime() + padding);
+
+            x.domain(xDomain);
+            y.domain([yAxisStart, d3.max(data, d => d.grade)]);
+
+            svg.append("g")
+                .attr("class", "x axis")
+                .attr("transform", `translate(0,${scatterplotHeight})`)
+                .call(d3.axisBottom(x))
+                .selectAll("text")
+                .style("text-anchor", "end")
+                .attr("dx", "-0.8em")
+                .attr("dy", "0.15em")
+                .attr("transform", "rotate(-45)");
+
+            svg.append("g")
+                .attr("class", "y axis")
+                .call(d3.axisLeft(y));
+
+            drawCircles(svg, data, y);
+        };
+
+        document.getElementById("view").addEventListener("change", function () {
+            const view = this.value;
+            updateData(view, svg, routeData, y, 0);
+        });
+
+        initialSetup(svg, routeData, y, 0);
+        updateData('daily', svg, routeData, y, 0);
+    </script>
+</body>
+</html>
