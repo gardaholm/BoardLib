@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,15 +9,18 @@
         body {
             font-family: Arial, sans-serif;
         }
+
         svg {
             background-color: #f0f0f0;
             margin: 20px;
         }
+
         .axis text {
             font-size: 12px;
         }
     </style>
 </head>
+
 <body>
     <h1>D3 Scatterplot Example with Zoom and Pan</h1>
     <div>
@@ -37,7 +41,7 @@
     <script id="data-script">
         const data = __DATA__;
 
-        const margin = { top: 20, right: 20, bottom: 50, left: 50 };
+        const margin = { top: 40, right: 20, bottom: 50, left: 50 };
         const scatterplotWidth = 800 - margin.left - margin.right;
         const scatterplotHeight = 500 - margin.top - margin.bottom;
 
@@ -45,8 +49,52 @@
             .attr("viewBox", `0 0 800 500`)
             .attr("preserveAspectRatio", "xMidYMid meet");
 
-        const g = svg.append("g")
+        svg.append("defs").append("clipPath")
+            .attr("id", "clip")
+            .append("rect")
+            .attr("x", 0)
+            .attr("y", -20)  // Add padding at the top
+            .attr("width", scatterplotWidth)
+            .attr("height", scatterplotHeight + 20); // Increase height to include the padding
+
+        // Get the background color of the svg element
+        const backgroundColor = window.getComputedStyle(document.querySelector("svg")).backgroundColor;
+
+        // Define gradient for the fading effect
+        const gradient = svg.append("defs").append("linearGradient")
+            .attr("id", "fade-gradient")
+            .attr("x1", "0%").attr("y1", "0%")
+            .attr("x2", "100%").attr("y2", "0%");
+
+        gradient.append("stop")
+            .attr("offset", "0%")
+            .attr("stop-color", backgroundColor)
+            .attr("stop-opacity", 1);
+
+        gradient.append("stop")
+            .attr("offset", "5%")
+            .attr("stop-color", backgroundColor)
+            .attr("stop-opacity", 0);
+
+        // Group for axes
+        const gAxis = svg.append("g")
             .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        // Group for points and lines with clip path
+        const g = svg.append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`)
+            .attr("clip-path", "url(#clip)");
+
+        // Add rectangle with gradient to create fading effect on edges
+        svg.append("rect")
+            .attr("x", margin.left+1)
+            .attr("y", margin.top-5)
+            .attr("width", scatterplotWidth)
+            .attr("height", scatterplotHeight+5)
+            .style("fill", "url(#fade-gradient)")
+            .style("pointer-events", "none");
+
+            
 
         const x = d3.scaleTime().range([0, scatterplotWidth]);
         const y = d3.scaleLinear().range([scatterplotHeight, 0]);
@@ -103,23 +151,38 @@
             return { avgTrendData, maxTrendData };
         };
 
-        const drawCircles = (svg, data, y) => {
+        const initialDrawCircles = (svg, data, y) => {
             const dotGroups = svg.selectAll(".dot-group")
                 .data(data, d => d.key);
 
+            // Handle entering elements
             const dotsEnter = dotGroups.enter().append("g")
                 .attr("class", "dot-group");
 
             dotsEnter.append("circle")
                 .attr("class", "dot")
-                .attr("r", 2)
-                .attr("fill", "steelblue")
-                .attr("cx", d => d.fx)
-                .attr("cy", d => d.fy)
-                .attr("data-is-ascent", d => d.is_ascent); // Added line;
+                .attr("r", 3)
+                .attr("data-is-ascent", d => d.is_ascent)
+                .attr("cx", d => x(d.date))
+                .attr("cy", scatterplotHeight) // Start from the bottom
+                .attr("stroke", "white")
+                .transition()
+                .duration(1000)
+                .attr("fill", d => d.is_ascent ? "red" : "gray")
+                .attr("cy", d => d.fy);
+        };
 
-            dotGroups.exit().remove();
+        const drawCircles = (svg, data, y) => {
+            const dotGroups = svg.selectAll(".dot-group")
+                .data(data, d => d.key);
 
+            // Handle exiting elements
+            dotGroups.exit().transition()
+                .duration(1000)
+                .attr("opacity", 0)
+                .remove();
+
+            // Handle updating elements
             dotGroups.select("circle")
                 .transition()
                 .duration(1000)
@@ -192,9 +255,9 @@
 
             drawCircles(svg, transformedData, y);
 
-            const xAxisGroup = svg.select(".x.axis");
+            const xAxisGroup = gAxis.select(".x.axis");
             if (xAxisGroup.empty()) {
-                svg.append("g")
+                gAxis.append("g")
                     .attr("class", "x axis")
                     .attr("transform", `translate(0,${scatterplotHeight})`)
                     .call(xAxis)
@@ -212,17 +275,25 @@
                     .attr("transform", "rotate(-45)");
             }
 
-            const yAxisGroup = svg.select(".y.axis");
+            const yAxisGroup = gAxis.select(".y.axis");
             if (yAxisGroup.empty()) {
-                svg.append("g")
+                gAxis.append("g")
                     .attr("class", "y axis")
                     .call(yAxis);
             } else {
                 yAxisGroup.call(yAxis);
             }
+
+            setTimeout(() => {
+                svg.call(zoom.transform, d3.zoomIdentity);
+
+                // Clear any stored zoom state
+                zoom.transform(d3.select("#scatterplot"), d3.zoomIdentity);
+            }, 1000); // Adjust the delay as needed
+
         };
 
-        const initialSetup = (svg, data, y, yAxisStart) => {
+        const initialSetup = (gAxis, g, data, y, yAxisStart) => {
             let xDomain = d3.extent(data, d => d.date);
             const padding = (xDomain[1] - xDomain[0]) * 0.05;
             xDomain[0] = new Date(xDomain[0].getTime() - padding);
@@ -231,7 +302,7 @@
             x.domain(xDomain);
             y.domain([yAxisStart, d3.max(data, d => d.grade)]);
 
-            g.append("g")
+            gAxis.append("g")
                 .attr("class", "x axis")
                 .attr("transform", `translate(0,${scatterplotHeight})`)
                 .call(d3.axisBottom(x))
@@ -241,30 +312,34 @@
                 .attr("dy", "0.15em")
                 .attr("transform", "rotate(-45)");
 
-            g.append("g")
+            gAxis.append("g")
                 .attr("class", "y axis")
                 .call(d3.axisLeft(y));
 
-            drawCircles(g, data, y);
+            initialDrawCircles(g, data, y);
         };
 
         const zoomed = (event) => {
             const transform = event.transform;
             const newX = transform.rescaleX(x);
-            const newY = transform.rescaleY(y);
 
-            g.select(".x.axis").call(d3.axisBottom(newX).tickFormat(formatDate['daily']).ticks(d3.timeDay.every(1))); // needs correct updating
-
+            gAxis.select(".x.axis").call(d3.axisBottom(newX).tickFormat(formatDate['daily']).ticks(d3.timeDay.every(1)));
 
             g.selectAll(".dot")
                 .attr("cx", d => transform.applyX(d.fx))
+                .attr("cy", d => d.fy); // Keep y-coordinates fixed
 
-
-            g.selectAll(".trendline")
+            g.selectAll(".avg-trendline")
                 .attr("d", d3.line()
                     .x(d => transform.applyX(x(d.date)))
-                    .y(d => transform.applyY(y(d.avgGrade))) // needs solution for both trendlines
-                    .curve(d3.curveBasis));
+                    .y(d => y(d.avgGrade)) // Keep y-coordinates fixed
+                    .curve(d3.curveBasis)(g.selectAll(".avg-trendline").datum()));
+
+            g.selectAll(".max-trendline")
+                .attr("d", d3.line()
+                    .x(d => transform.applyX(x(d.date)))
+                    .y(d => y(d.maxGrade)) // Keep y-coordinates fixed
+                    .curve(d3.curveBasis)(g.selectAll(".max-trendline").datum()));
         };
 
         const zoom = d3.zoom()
@@ -279,8 +354,9 @@
             updateData(view, g, routeData, y, 0);
         });
 
-        initialSetup(g, routeData, y, 0);
-        updateData('daily', g, routeData, y, 0);
+        initialSetup(gAxis, g, routeData, y, 0);
+        updateData('monthly', g, routeData, y, 0);
     </script>
 </body>
+
 </html>

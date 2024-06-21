@@ -2,7 +2,7 @@
 import pandas as pd
 
 # Read the CSV data
-csv_file = r'/home/ptschaikner/coding/Tension/test.csv'  # Update this with the actual path to your CSV file
+csv_file = r'/home/ptschaikner/coding/TensionData/test.csv'  # Update this with the actual path to your CSV file
 data = pd.read_csv(csv_file)
 
 # Convert the data to JSON format for embedding in the HTML
