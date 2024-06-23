@@ -132,7 +132,6 @@
             });
         };
 
-
         const calculateTrendData = (data, transformDate) => {
             const filteredData = data.filter(d => d.is_ascent); // Use only ascents for trend calculation
             const groupedData = d3.group(filteredData, d => +transformDate(d.date));
@@ -162,14 +161,17 @@
                 .attr("class", "dot")
                 .attr("r", 3)
                 .attr("opacity", 0.3)
-                .attr("date", d => d.date)
-                .attr("cx", d => x(d.date))
+                .attr("date", d => d.fx)
+                .attr("cx", d => d.fx)
                 .attr("cy", scatterplotHeight) // Start from the bottom
                 .attr("stroke", "white")
-                .transition()
-                .duration(1000)
                 .attr("fill", d => d.is_ascent ? "red" : "gray")
-                .attr("cy", d => d.fy);
+                .transition()
+                .delay((d, i) => i * 1)
+                .duration(1000)
+                .ease(d3.easeQuadInOut)
+                .attr("cy", d => d.fy)
+
         };
 
         const drawCircles = (svg, data, y) => {
@@ -186,6 +188,7 @@
             dotGroups.select("circle")
                 .transition()
                 .duration(1000)
+                .ease(d3.easeCubicInOut)
                 .attr("cx", d => d.fx)
                 .attr("cy", d => d.fy)
                 .attr("fill", d => d.is_ascent ? "red" : "gray");
@@ -205,43 +208,37 @@
             svg.selectAll(".avg-trendline").remove();
             svg.selectAll(".max-trendline").remove();
 
-            svg.append("path")
+            const avgPath = svg.append("path")
                 .datum(avgTrendData)
                 .attr("class", "trendline avg-trendline")
                 .attr("d", avgTrendline)
                 .attr("stroke", "blue")
                 .attr("fill", "none");
 
-            svg.append("path")
+            const maxPath = svg.append("path")
                 .datum(maxTrendData)
                 .attr("class", "trendline max-trendline")
                 .attr("d", maxTrendline)
                 .attr("stroke", "red")
                 .attr("fill", "none");
 
-            // Define the area generator
-            const area = d3.area()
-                .x(d => x(d.date))
-                .y0(d => y(d.avgGrade))
-                .y1(d => y(d.maxGrade))
-                .curve(d3.curveBasis);
+            const animatePath = (path) => {
+                const totalLength = path.node().getTotalLength();
+                path.attr("stroke-dasharray", totalLength + " " + totalLength)
+                    .attr("stroke-dashoffset", totalLength)
+                    .transition()
+                    .duration(2000)
+                    .ease(d3.easeQuadInOut)
+                    .attr("stroke-dashoffset", 0);
+            };
 
-            svg.selectAll(".area-between").remove();
-
-            // Append the area path
-            svg.append("path")
-                .datum(avgTrendData.map((d, i) => ({
-                    date: d.date,
-                    avgGrade: d.avgGrade,
-                    maxGrade: maxTrendData[i]?.maxGrade // Assuming avgTrendData and maxTrendData have the same length and matching dates
-                })))
-                .attr("class", "area-between")
-                .attr("d", area)
-                .attr("fill", "lightblue")
-                .attr("opacity", 0.5);
+            animatePath(avgPath);
+            animatePath(maxPath);
         };
 
+
         let currentView = 'monthly';
+        let transformedData, collisionRadius;
 
         const updateAxes = (view, x, gAxis) => {
             const xAxis = d3.axisBottom(x)
@@ -282,14 +279,14 @@
                 yearly: d3.timeYear
             }[view];
 
-            const collisionRadius = {
+            collisionRadius = {
                 daily: 0.1,
                 weekly: 0.5,
                 monthly: 1,
                 yearly: 2
             }[view]; // Adjust these values as needed
 
-            const transformedData = data.map(d => ({
+            transformedData = data.map(d => ({
                 ...d,
                 date: transformDate(d.date)
             }));
@@ -341,13 +338,28 @@
             x.domain(xDomain);
             y.domain([yAxisStart, d3.max(data, d => d.grade)]);
 
+            // Set global variables for initial setup
+            transformedData = data.map(d => ({
+                ...d,
+                date: d3.timeMonth(d.date) // Use the default view (monthly) initially
+            }));
+            collisionRadius = 1; // Default collision radius for monthly view
+
+            applyForceSimulation(transformedData, y, collisionRadius);
+
+            const { avgTrendData, maxTrendData } = calculateTrendData(transformedData, d3.timeMonth);
+
+            drawTrendlines(g, avgTrendData, maxTrendData, x, y);
+
+
             updateAxes(currentView, x, gAxis);
 
             gAxis.append("g")
                 .attr("class", "y axis")
                 .call(d3.axisLeft(y));
 
-            initialDrawCircles(g, data, y);
+            initialDrawCircles(g, transformedData, y);
+
         };
 
         const zoomed = (event) => {
@@ -372,13 +384,7 @@
                     .y(d => y(d.maxGrade)) // Keep y-coordinates fixed
                     .curve(d3.curveBasis)(g.selectAll(".max-trendline").datum()));
 
-            // Update the area path on zoom
-            g.selectAll(".area-between")
-                .attr("d", d3.area()
-                    .x(d => transform.applyX(x(d.date)))
-                    .y0(d => y(d.avgGrade))
-                    .y1(d => y(d.maxGrade))
-                    .curve(d3.curveBasis)(g.selectAll(".area-between").datum()));
+
         };
 
         const zoom = d3.zoom()
@@ -393,7 +399,6 @@
             updateData(currentView, g, routeData, y, 0);
         });
         initialSetup(gAxis, g, routeData, y, 0);
-        updateData(currentView, g, routeData, y, 0);
     </script>
 </body>
 
