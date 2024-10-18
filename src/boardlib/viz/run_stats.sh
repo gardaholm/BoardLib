@@ -50,9 +50,18 @@ done
 # Run the Python scripts
 python3 climbing_grade.py
 python3 routes_per_grade.py
+python3 grade_distribution.py
 
 # Open the generated HTML files in the folder
 for file in routes_per_grade.html; do
+    if [ -f "$file" ]; then
+        echo "Opening $file"
+        open "$file"
+    fi
+done
+
+# Open the generated HTML files in the folder
+for file in routes_by_grade.html; do
     if [ -f "$file" ]; then
         echo "Opening $file"
         open "$file"
@@ -66,4 +75,6 @@ for file in climbing_grades.html; do
         open "$file"
     fi
 done
+
+
 

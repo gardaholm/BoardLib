@@ -4,3 +4,5 @@
 tmp
 dist
 __pycache__/
+src/boardlib/viz/db.sqlite3
+src/boardlib/viz/export.csv
